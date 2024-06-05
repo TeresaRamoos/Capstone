@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Scikit model behind flask app on railway
 
 ## tl;dr
@@ -696,3 +697,6 @@ from playhouse.db_url import connect
 # Otherwise, it connects to a local sqlite db stored in the predictions.db file.
 DB = connect(os.environ.get('DATABASE_URL') or 'sqlite:///predictions.db')
 ```
+=======
+
+>>>>>>> 1fadd5754232b03a258a2f3aec9bce1a0e294f4f
