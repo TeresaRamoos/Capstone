@@ -24,8 +24,8 @@ DB = connect(os.environ.get('DATABASE_URL') or 'sqlite:///predictions.db')
 class Prediction(Model):
     observation_id = TextField(unique=True)
     observation = TextField()
-    label = BooleanField()
     predicted_outcome = BooleanField()
+    true_outcome = BooleanField(null=True)  # Allow null values for true outcome
     
     class Meta:
         database = DB
@@ -119,7 +119,6 @@ def will_recidivate():
     
     p = Prediction(
         observation_id=_id,
-        label=bool(label),  # Store the boolean label directly
         observation=json.dumps(observation),  # Store observation as JSON string
         predicted_outcome=bool(label)  # Store the predicted outcome
     )
@@ -143,10 +142,9 @@ def recidivism_result():
     
     try:
         p = Prediction.get(Prediction.observation_id == _id)
-        p.label = outcome
+        p.true_outcome = outcome
         p.save()
         
-        obs_dict = json.loads(p.observation)
         predicted_outcome = p.predicted_outcome  # Retrieve the predicted outcome from the model
         
         response = {
