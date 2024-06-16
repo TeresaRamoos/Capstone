@@ -4,19 +4,21 @@ import pickle
 import joblib
 import pandas as pd
 from flask import Flask, jsonify, request
-from peewee import (
-    Model, TextField, BooleanField, IntegrityError
-)
+from peewee import Model, TextField, BooleanField, IntegrityError
 from playhouse.shortcuts import model_to_dict
 from playhouse.db_url import connect
 import logging
-import hashlib
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Database setup
+########################################
+# Begin database stuff
+
+# The connect function checks if there is a DATABASE_URL env var.
+# If it exists, it uses it to connect to a remote postgres db.
+# Otherwise, it connects to a local sqlite db stored in predictions.db.
 DB = connect(os.environ.get('DATABASE_URL') or 'sqlite:///predictions.db')
 
 class Prediction(Model):
@@ -30,7 +32,12 @@ class Prediction(Model):
 
 DB.create_tables([Prediction], safe=True)
 
+# End database stuff
+########################################
+
+########################################
 # Unpickle the previously-trained model
+
 with open('columns.json') as fh:
     columns = json.load(fh)
 
@@ -39,8 +46,21 @@ pipeline = joblib.load('pipeline.pickle')
 with open('dtypes.pickle', 'rb') as fh:
     dtypes = pickle.load(fh)
 
-# Input validation
+# End model un-pickling
+########################################
+
+########################################
+# Input validation functions
+
 def check_valid_column(observation):
+    """
+    Validates that our observation only has valid columns
+        
+    Returns:
+    - assertion value: True if all provided columns are valid, False otherwise
+    - error message: empty if all provided columns are valid, False otherwise
+    """
+    
     valid_columns = {
         "id", "name", "sex", "dob", "race",
         "juv_fel_count", "juv_misd_count", "juv_other_count", "priors_count",
@@ -62,25 +82,31 @@ def check_valid_column(observation):
 
     return True, ""
 
-# Flask app setup
+########################################
+# Begin webserver stuff
+
 app = Flask(__name__)
 
 @app.route('/will_recidivate', methods=['POST'])
 def will_recidivate():
     observation = request.get_json()
+    
     columns_ok, error = check_valid_column(observation)
     if not columns_ok:
         response = {'error': error}
         return jsonify(response), 400
 
     _id = observation['id']
-
+    
+    # Check if ID already exists in the database
     if Prediction.select().where(Prediction.observation_id == _id).exists():
-        response = {'error': f'Observation ID: "{_id}" already exists'}
+        error_msg = 'Observation ID: "{}" already exists'.format(_id)
+        response = {'error': error_msg}
+        logger.warning(error_msg)
         return jsonify(response), 400
 
     try:
-        obs = pd.DataFrame([observation], columns=columns)
+        obs = pd.DataFrame([observation])
     except ValueError as e:
         return jsonify({'error': 'DataFrame creation failed, missing required columns.'}), 400
     
@@ -93,46 +119,58 @@ def will_recidivate():
     
     p = Prediction(
         observation_id=_id,
-        label=bool(label),
-        observation=json.dumps(observation),
-        predicted_outcome=bool(label)
+        label=bool(label),  # Store the boolean label directly
+        observation=json.dumps(observation),  # Store observation as JSON string
+        predicted_outcome=bool(label)  # Store the predicted outcome
     )
     
     try:
         p.save()
+        logger.info(f"Observation saved: {_id}")
     except IntegrityError:
-        response = {'error': f'Observation ID: "{_id}" already exists'}
+        error_msg = 'Observation ID: "{}" already exists'.format(_id)
+        response['error'] = error_msg
+        logger.warning(error_msg)
         DB.rollback()
-        return jsonify(response), 400
-    
+        
     return jsonify(response)
 
 @app.route('/recidivism_result', methods=['POST'])
 def recidivism_result():
     observation = request.get_json()
     _id = observation['id']
-    outcome = bool(observation['outcome'])
+    outcome = bool(observation['outcome'])  # Ensure outcome is boolean
     
     try:
         p = Prediction.get(Prediction.observation_id == _id)
         p.label = outcome
         p.save()
         
+        obs_dict = json.loads(p.observation)
+        predicted_outcome = p.predicted_outcome  # Retrieve the predicted outcome from the model
+        
         response = {
             'id': _id,
             'outcome': outcome,
-            'predicted_outcome': p.predicted_outcome
+            'predicted_outcome': predicted_outcome
         }
+        
+        logger.info(f"Recidivism result for ID {_id}: {response}")
         return jsonify(response)
     
     except Prediction.DoesNotExist:
-        return jsonify({'error': f'Observation ID: "{_id}" does not exist'}), 400
+        error_msg = 'Observation ID: "{}" does not exist'.format(_id)
+        logger.warning(error_msg)
+        return jsonify({'error': error_msg}), 400
 
 @app.route('/list-db-contents')
 def list_db_contents():
     contents = [model_to_dict(obs) for obs in Prediction.select()]
+    logger.info(f"Database contents: {contents}")
     return jsonify(contents)
 
+# End webserver stuff
+########################################
+
 if __name__ == "__main__":
-    port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', debug=True, port=5000)
