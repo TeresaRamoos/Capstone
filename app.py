@@ -11,32 +11,17 @@ from playhouse.shortcuts import model_to_dict
 from playhouse.db_url import connect
 import logging
 
-class CustomRailwayLogFormatter(logging.Formatter):
-    def format(self, record):
-        log_record = {
-            "time": self.formatTime(record),
-            "level": record.levelname,
-            "message": record.getMessage()
-        }
-        return json.dumps(log_record)
-    
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-def get_logger():
-    logger = logging.getLogger()
-    logger.setLevel(logging.INFO) # this should be just "logger.setLevel(logging.INFO)" but markdown is interpreting it wrong here...
-    handler = logging.StreamHandler()
-    for handler in logger.handlers[:]:
-        logger.removeHandler(handler)
-    formatter = CustomRailwayLogFormatter()
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    return logger
+########################################
+# Begin database stuff
 
-
-logger = get_logger()
-
+# The connect function checks if there is a DATABASE_URL env var.
+# If it exists, it uses it to connect to a remote postgres db.
+# Otherwise, it connects to a local sqlite db stored in predictions.db.
 DB = connect(os.environ.get('DATABASE_URL') or 'sqlite:///predictions.db')
-
 
 class Prediction(Model):
     observation_id = TextField(unique=True)
