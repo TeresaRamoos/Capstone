@@ -3,7 +3,7 @@ import json
 import joblib
 import pandas as pd
 from flask import Flask, jsonify, request
-from peewee import Model, BooleanField, CharField, TextField
+from peewee import Model, BooleanField, CharField, TextField, IntegrityError
 from playhouse.shortcuts import model_to_dict
 from playhouse.db_url import connect
 import logging
@@ -21,7 +21,7 @@ class CustomRailwayLogFormatter(logging.Formatter):
 
 def get_logger():
     logger = logging.getLogger()
-    logger.setLevel(logging.INFO) 
+    logger.setLevel(logging.INFO)
     handler = logging.StreamHandler()
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
@@ -36,7 +36,7 @@ logger = get_logger()
 DB = connect(os.environ.get('DATABASE_URL') or 'sqlite:///predictions.db')
 
 class Prediction(Model):
-    observation_id = CharField(primary_key=True, max_length=50)
+    id = CharField(primary_key=True, max_length=50)
     observation = TextField()
     pred_class = BooleanField()
     true_class = BooleanField(null=True)
@@ -55,64 +55,67 @@ app = Flask(__name__)
 
 def process_observation(observation):
     logger.info("Processing observation, %s", observation)
+    # A lot of processing
     return observation
 
 @app.route('/will_recidivate', methods=['POST'])
 def will_recidivate():
     obs_dict = request.get_json()
-    logger.info('Received observation: %s', obs_dict)
+    logger.info('Observation: %s', obs_dict)
+    _id = obs_dict['id']
+    observation = obs_dict
 
-    _id = obs_dict.get('id')
     if not _id:
         logger.warning('Returning error: no id provided')
         return jsonify({'error': 'id is required'}), 400
-    if Prediction.select().where(Prediction.observation_id == _id).exists():
+    if Prediction.select().where(Prediction.id == _id).exists():
         logger.warning('Returning error: already exists id %s', _id)
         return jsonify({'error': 'id already exists'}), 400
 
     try:
-        obs = pd.DataFrame([obs_dict], columns=columns)
+        obs = pd.DataFrame([observation], columns=columns)
     except ValueError as e:
-        logger.error('Error processing data: %s', str(e), exc_info=True)
+        logger.error('Returning error: %s', str(e), exc_info=True)
         return jsonify({'error': 'Data processing error'}), 400
-
+    
     label = bool(pipeline.predict(obs)[0])
     response = {'id': _id, 'outcome': label}
     p = Prediction(
-        observation_id=_id,
-        observation=json.dumps(obs_dict),
-        pred_class=label
+        id=_id,
+        observation=json.dumps(observation),
+        pred_class=label,
     )
     p.save()
-    logger.info('Saved prediction: %s', model_to_dict(p))
+    logger.info('Saved: %s', model_to_dict(p))
+    logger.info('Prediction: %s', response)
+
     return jsonify(response)
 
 @app.route('/recidivism_result', methods=['POST'])
 def recidivism_result():
     obs = request.get_json()
-    logger.info('Received update: %s', obs)
-    _id = obs.get('id')
-    outcome = obs.get('outcome')
+    logger.info('Observation:', obs)
+    _id = obs['id']
+    outcome = obs['outcome']
 
     if not _id:
         logger.warning('Returning error: no id provided')
         return jsonify({'error': 'id is required'}), 400
-    if not Prediction.select().where(Prediction.observation_id == _id).exists():
-        logger.warning('Returning error: id %s does not exist', _id)
+    if not Prediction.select().where(Prediction.id == _id).exists():
+        logger.warning(f'Returning error: id {_id} does not exist in the database')
         return jsonify({'error': 'id does not exist'}), 400
-
-    p = Prediction.get(Prediction.observation_id == _id)
+    
+    p = Prediction.get(Prediction.id == _id)
     p.true_class = outcome
     p.save()
-    logger.info('Updated prediction: %s', model_to_dict(p))
+    logger.info('Updated: %s', model_to_dict(p))
+
     response = {'id': _id, 'outcome': outcome, 'predicted_outcome': p.pred_class}
     return jsonify(response)
 
 @app.route('/list-db-contents')
 def list_db_contents():
-    contents = [model_to_dict(obs) for obs in Prediction.select()]
-    logger.info('Database contents: %s', contents)
-    return jsonify(contents)
+    return jsonify([model_to_dict(obs) for obs in Prediction.select()])
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', debug=True, port=8000)
