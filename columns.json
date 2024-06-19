@@ -1,1 +1,1 @@
-["id", "name", "sex", "race", "juv_fel_count", "juv_misd_count", "juv_other_count", "priors_count", "c_case_number", "c_charge_degree", "c_charge_desc", "c_offense_date", "c_arrest_date", "c_jail_in"]
+["sex", "race", "total_adult_crimes", "c_charge_degree", "c_charge_desc_freq", "age_at_unified_date", "total_juv_crimes", "offense_month", "offense_day_of_week", "arrest_month", "arrest_day_of_week"]
