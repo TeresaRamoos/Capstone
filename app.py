@@ -40,7 +40,7 @@ DB = connect(os.environ.get('DATABASE_URL') or 'sqlite:///predictions.db')
 class Prediction(Model):
     observation_id = TextField(unique=True)
     observation = TextField()
-    label = BooleanField()
+    outcome = BooleanField()
     predicted_outcome = BooleanField()
 
     class Meta:
@@ -144,14 +144,14 @@ def will_recidivate():
     _id = observation['id']
     obs = preprocess_data(observation)
     
-    label = pipeline.predict(obs)[0]
-    response = {'id': _id, 'outcome': bool(label)}
+    outcome = pipeline.predict(obs)[0]
+    response = {'id': _id, 'outcome': bool(outcome)}
     
     p = Prediction(
         observation_id=_id,
-        label=bool(label),
+        outcome=bool(outcome),
         observation=json.dumps(observation),
-        predicted_outcome=bool(label)
+        predicted_outcome=bool(outcome)
     )
     
     try:
@@ -173,7 +173,7 @@ def recidivism_result():
     
     try:
         p = Prediction.get(Prediction.observation_id == _id)
-        p.label = outcome
+        p.outcome = outcome
         p.save()
         
         obs_dict = json.loads(p.observation)
