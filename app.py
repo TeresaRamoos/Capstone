@@ -100,10 +100,10 @@ def preprocess_data(df):
         "c_jail_in": str
     })
 
-    df['dob'] = pd.to_datetime(df['dob'])
-    df['c_offense_date'] = pd.to_datetime(df['c_offense_date'])
-    df['c_arrest_date'] = pd.to_datetime(df['c_arrest_date'])
-    df['c_jail_in'] = pd.to_datetime(df['c_jail_in'])
+    df['dob'] = pd.to_datetime(df['dob'], errors='coerce')
+    df['c_offense_date'] = pd.to_datetime(df['c_offense_date'], errors='coerce')
+    df['c_arrest_date'] = pd.to_datetime(df['c_arrest_date'], errors='coerce')
+    df['c_jail_in'] = pd.to_datetime(df['c_jail_in'], errors='coerce')
 
     df['unified_date'] = df['c_arrest_date'].combine_first(df['c_offense_date'])
 
