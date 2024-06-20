@@ -3,6 +3,9 @@ import json
 import pickle
 import joblib
 import pandas as pd
+import uuid
+import hashlib
+import base64
 from flask import Flask, jsonify, request
 from peewee import Model, TextField, BooleanField, IntegrityError
 from playhouse.shortcuts import model_to_dict
@@ -81,25 +84,7 @@ def check_valid_column(observation):
 def preprocess_data(df):
     df = pd.DataFrame([df])
 
-    # Convert to correct types
-    df = df.astype({
-        "id": str,
-        "name": str,
-        "sex": str,
-        "dob": str,
-        "race": str,
-        "juv_fel_count": int,
-        "juv_misd_count": int,
-        "juv_other_count": int,
-        "priors_count": int,
-        "c_case_number": str,
-        "c_charge_degree": str,
-        "c_charge_desc": str,
-        "c_offense_date": str,
-        "c_arrest_date": str,
-        "c_jail_in": str
-    })
-
+    # Convert to correct types and handle null values
     df['dob'] = pd.to_datetime(df['dob'], errors='coerce')
     df['c_offense_date'] = pd.to_datetime(df['c_offense_date'], errors='coerce')
     df['c_arrest_date'] = pd.to_datetime(df['c_arrest_date'], errors='coerce')
@@ -108,6 +93,7 @@ def preprocess_data(df):
     df['unified_date'] = df['c_arrest_date'].combine_first(df['c_offense_date'])
 
     df['age_at_unified_date'] = (df['c_jail_in'] - df['dob']).dt.days // 365
+    df['age_at_unified_date'] = df['age_at_unified_date'].fillna(df['age_at_unified_date'].mean())
     
     avg_time_offense_arrest = (df['c_arrest_date'] - df['c_offense_date']).dt.days.mean()
     avg_time_since_jail_in = (pd.to_datetime('today') - df['c_jail_in']).dt.days.mean()
@@ -117,11 +103,11 @@ def preprocess_data(df):
     df['time_since_jail_in'] = (pd.to_datetime('today') - df['c_jail_in']).dt.days.fillna(avg_time_since_jail_in)
     df['time_to_jail'] = (df['c_jail_in'] - df['unified_date']).dt.days.fillna(avg_time_to_jail)
     
-    df['total_juv_crimes'] = df['juv_fel_count'] + df['juv_misd_count'] + df['juv_other_count']
-    df['total_adult_crimes'] = df['priors_count'] - df['total_juv_crimes']
+    df['total_juv_crimes'] = df['juv_fel_count'].fillna(0) + df['juv_misd_count'].fillna(0) + df['juv_other_count'].fillna(0)
+    df['total_adult_crimes'] = df['priors_count'].fillna(0) - df['total_juv_crimes']
 
     freq_encoding = df['c_charge_desc'].value_counts(normalize=True)
-    df['c_charge_desc_freq'] = df['c_charge_desc'].map(freq_encoding)
+    df['c_charge_desc_freq'] = df['c_charge_desc'].map(freq_encoding).fillna(0)
 
     df['offense_month'] = df['c_offense_date'].dt.month.fillna(df['c_offense_date'].dt.month.mean())
     df['offense_day_of_week'] = df['c_offense_date'].dt.dayofweek.fillna(df['c_offense_date'].dt.dayofweek.mean())
@@ -130,11 +116,25 @@ def preprocess_data(df):
 
     return df
 
+def encode_name(name):
+    return hashlib.sha256(name.encode('utf-8')).hexdigest()
+
+def generate_id_from_observation(observation):
+    observation_str = json.dumps(observation, sort_keys=True)
+    md5_hash = hashlib.md5(observation_str.encode('utf-8')).digest()
+    return base64.urlsafe_b64encode(md5_hash).decode('utf-8').rstrip('=')
+
 app = Flask(__name__)
 
 @app.route('/will_recidivate', methods=['POST'])
 def will_recidivate():
     observation = request.get_json()
+
+    if observation.get('name'):
+        observation['name'] = encode_name(observation['name'])
+
+    if observation.get('id') is None:
+        observation['id'] = generate_id_from_observation(observation)
     
     columns_ok, error = check_valid_column(observation)
     if not columns_ok:
