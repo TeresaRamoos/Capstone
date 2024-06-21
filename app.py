@@ -147,14 +147,6 @@ def will_recidivate():
     outcome = pipeline.predict(obs)[0]
     response = {'id': _id, 'outcome': bool(outcome)}
     
-    try:
-        existing_case = Prediction.get(Prediction.observation['c_case_number'] == observation['c_case_number'])
-        warning_msg = f'Observation with case number {observation["c_case_number"]} already exists.'
-        response['warning'] = warning_msg
-        logger.warning(warning_msg)
-    except Prediction.DoesNotExist:
-        pass
-    
     p = Prediction(
         observation_id=_id,
         outcome=bool(outcome),
@@ -166,7 +158,7 @@ def will_recidivate():
         p.save()
         logger.info(f"Observation saved: {_id}")
     except IntegrityError:
-        error_msg = f'Observation ID: "{_id}" already exists'
+        error_msg = 'Observation ID: "{}" already exists'.format(_id)
         response['error'] = error_msg
         logger.warning(error_msg)
         DB.rollback()
@@ -197,11 +189,11 @@ def recidivism_result():
         return jsonify(response)
     
     except Prediction.DoesNotExist:
-        error_msg = f'Observation ID: "{_id}" does not exist'
+        error_msg = 'Observation ID: "{}" does not exist'.format(_id)
         logger.warning(error_msg)
         return jsonify({'error': error_msg})
 
-@app.route('/list-db-contents/')
+@app.route('/list-db-contents')
 def list_db_contents():
     contents = [model_to_dict(obs) for obs in Prediction.select()]
     logger.info(f"Database contents: {contents}")
