@@ -3,9 +3,8 @@ import json
 import pickle
 import joblib
 import pandas as pd
-import uuid
 import hashlib
-import base64
+import base64  # Import base64 module
 from flask import Flask, jsonify, request
 from peewee import Model, TextField, BooleanField, IntegrityError
 from playhouse.shortcuts import model_to_dict
@@ -119,10 +118,11 @@ def preprocess_data(df):
 def encode_name(name):
     return hashlib.sha256(name.encode('utf-8')).hexdigest()
 
-def generate_id_from_observation(observation):
+def generate_id_from_observation(observation, prefix="id_"):
     observation_str = json.dumps(observation, sort_keys=True)
     md5_hash = hashlib.md5(observation_str.encode('utf-8')).digest()
-    return base64.urlsafe_b64encode(md5_hash).decode('utf-8').rstrip('=')
+    base64_id = base64.urlsafe_b64encode(md5_hash).decode('utf-8').rstrip('=')
+    return f"{prefix}{base64_id}"
 
 app = Flask(__name__)
 
