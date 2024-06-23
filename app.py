@@ -134,6 +134,7 @@ def generate_id_from_observation(observation, prefix="id_"):
 app = Flask(__name__)
 
 @app.route('/will_recidivate/', methods=['POST'])
+
 def will_recidivate():
     observation = request.get_json()
 
@@ -190,6 +191,7 @@ def will_recidivate():
 @app.route('/recidivism_result/', methods=['POST'])
 def recidivism_result():
     observation = request.get_json()
+    logger.info(f"Received observation: {observation}")
     _id = observation['id']
     outcome = observation.get('outcome')
     
@@ -197,6 +199,9 @@ def recidivism_result():
         p = Prediction.get(Prediction.observation_id == _id)
         p.outcome = outcome
         p.save()
+        
+        obs_dict = json.loads(p.observation)
+        predicted_outcome = p.predicted_outcome
         
         response = {
             'id': _id,
