@@ -4,7 +4,7 @@ import pickle
 import joblib
 import pandas as pd
 import hashlib
-import base64  # Import base64 module
+import base64
 from flask import Flask, jsonify, request
 from peewee import Model, TextField, BooleanField, IntegrityError
 from playhouse.shortcuts import model_to_dict
@@ -12,7 +12,7 @@ from playhouse.db_url import connect
 import logging
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 class CustomRailwayLogFormatter(logging.Formatter):
@@ -26,7 +26,7 @@ class CustomRailwayLogFormatter(logging.Formatter):
 
 def get_logger():
     logger = logging.getLogger()
-    logger.setLevel(logging.INFO)
+    logger.setLevel(logging.DEBUG)
     handler = logging.StreamHandler()
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
@@ -39,10 +39,17 @@ logger = get_logger()
 
 DB = connect(os.environ.get('DATABASE_URL') or 'sqlite:///predictions.db')
 
+class BooleanFieldWithNone(BooleanField):
+    def db_value(self, value):
+        return None if value is None else bool(value)
+
+    def python_value(self, value):
+        return None if value is None else bool(value)
+
 class Prediction(Model):
     observation_id = TextField(unique=True)
     observation = TextField()
-    outcome = BooleanField()
+    outcome = BooleanFieldWithNone(null=True)
     predicted_outcome = BooleanField()
 
     class Meta:
@@ -130,38 +137,53 @@ app = Flask(__name__)
 def will_recidivate():
     observation = request.get_json()
 
+    logger.debug(f"Received observation: {observation}")
+
     if observation.get('name'):
         observation['name'] = encode_name(observation['name'])
+        logger.debug(f"Encoded name: {observation['name']}")
 
     if observation.get('id') is None:
         observation['id'] = generate_id_from_observation(observation)
+        logger.debug(f"Generated ID: {observation['id']}")
     
     columns_ok, error = check_valid_column(observation)
     if not columns_ok:
         response = {'error': error}
+        logger.warning(f"Invalid columns in observation: {error}")
         return jsonify(response)
 
     _id = observation['id']
+
+    # Check if the ID already exists
+    existing_prediction = Prediction.get_or_none(Prediction.observation_id == _id)
+    if existing_prediction:
+        logger.warning(f"Observation ID: \"{_id}\" already exists")
+        response = {
+            'error': f'Observation ID: "{_id}" already exists',
+            'id': _id,
+            'outcome': existing_prediction.predicted_outcome
+        }
+        return jsonify(response)
+
     obs = preprocess_data(observation)
     
     outcome = pipeline.predict(obs)[0]
     response = {'id': _id, 'outcome': bool(outcome)}
     
-    p = Prediction(
-        observation_id=_id,
-        outcome=bool(outcome),
-        observation=json.dumps(observation),
-        predicted_outcome=bool(outcome)
-    )
-    
     try:
-        p.save()
+        with DB.atomic():
+            Prediction.create(
+                observation_id=_id,
+                outcome=None,  # Initially set to None
+                observation=json.dumps(observation),
+                predicted_outcome=bool(outcome)
+            )
         logger.info(f"Observation saved: {_id}")
     except IntegrityError:
-        error_msg = 'Observation ID: "{}" already exists'.format(_id)
+        error_msg = f'Observation ID: "{_id}" already exists'
         response['error'] = error_msg
         logger.warning(error_msg)
-        DB.rollback()
         
     return jsonify(response)
 
@@ -169,27 +191,24 @@ def will_recidivate():
 def recidivism_result():
     observation = request.get_json()
     _id = observation['id']
-    outcome = bool(observation['outcome'])
+    outcome = observation.get('outcome')
     
     try:
         p = Prediction.get(Prediction.observation_id == _id)
         p.outcome = outcome
         p.save()
         
-        obs_dict = json.loads(p.observation)
-        predicted_outcome = p.predicted_outcome
-        
         response = {
             'id': _id,
             'outcome': outcome,
-            'predicted_outcome': predicted_outcome
+            'predicted_outcome': p.predicted_outcome
         }
         
         logger.info(f"Recidivism result for ID {_id}: {response}")
         return jsonify(response)
     
     except Prediction.DoesNotExist:
-        error_msg = 'Observation ID: "{}" does not exist'.format(_id)
+        error_msg = f'Observation ID: "{_id}" does not exist'
         logger.warning(error_msg)
         return jsonify({'error': error_msg})
 
