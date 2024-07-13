@@ -60,7 +60,15 @@ DB.create_tables([Prediction], safe=True)
 with open('columns.json') as fh:
     columns = json.load(fh)
 
-pipeline = joblib.load('pipeline.pickle')
+def load_model(file_path):
+    with gzip.open(file_path, 'rb') as f_in:
+        model = pickle.load(f_in)
+    if not hasattr(model, 'predict'):
+        raise ValueError("Loaded object is not a valid model or pipeline with predict method")
+    return model
+
+# Use the load_model function to load the compressed model
+pipeline = load_model('pipeline.pickle.gz')
 
 with open('dtypes.pickle', 'rb') as fh:
     dtypes = pickle.load(fh)
@@ -168,8 +176,10 @@ def will_recidivate():
         return jsonify(response)
 
     obs = preprocess_data(observation)
+    obs = obs[columns]
     
     outcome = pipeline.predict(obs)[0]
+    
     response = {'id': _id, 'outcome': bool(outcome)}
     
     try:

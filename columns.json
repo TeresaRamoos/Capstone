@@ -1,1 +1,1 @@
-["sex", "race", "total_adult_crimes", "c_charge_degree", "c_charge_desc_freq", "age_at_unified_date", "total_juv_crimes", "offense_month", "offense_day_of_week", "arrest_month", "arrest_day_of_week"]
+["sex", "race", "c_charge_degree", "c_charge_desc_freq", "age_arrest", "total_juv_crimes", "total_adult_crimes", "offense_day_of_week", "arrest_month", "arrest_day_of_week", "age_group", "priors_count_bin", "race_priors_interaction", "jail_month", "jail_year"]
