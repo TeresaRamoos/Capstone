@@ -96,11 +96,48 @@ def check_valid_column(observation):
 
     return True, ""
 
+
 # Define the frequency encoding function
 def frequency_encoding(df, column):
     freq_encoding = df[column].value_counts(normalize=True)
     df[f'{column}_freq'] = df[column].map(freq_encoding)
     return df
+
+def validate_observation(observation):
+    errors = []
+
+    # Null/None Checks
+    if observation.get('c_jail_in') is None:
+        errors.append("c_jail_in cannot be None")
+    if all(observation.get(field) is None for field in ['dob', 'priors_count', 'sex', 'race']):
+        errors.append("At least one of 'dob', 'priors_count', 'sex', or 'race' must not be None")
+
+    # Value Range Checks
+    if 'priors_count' in observation and observation['priors_count'] is not None and observation['priors_count'] < 0:
+        errors.append("priors_count must be non-negative")
+
+    # Date Validity Checks
+    for date_field in ['dob', 'c_offense_date', 'c_arrest_date', 'c_jail_in']:
+        if observation.get(date_field) is not None:
+            try:
+                pd.to_datetime(observation[date_field], errors='raise')
+            except (ValueError, TypeError):
+                errors.append(f"{date_field} must be a valid date")
+
+    if 'c_jail_in' in observation and 'c_offense_date' in observation and observation.get('c_jail_in') and observation.get('c_offense_date'):
+        if pd.to_datetime(observation['c_jail_in']) < pd.to_datetime(observation['c_offense_date']):
+            errors.append("c_jail_in cannot be before c_offense_date")
+
+    # Category Value Checks
+    if 'sex' in observation and observation['sex'] not in [None, 'Male', 'Female']:
+        errors.append("sex must be 'Male' or 'Female'")
+
+    if 'race' in observation:
+        valid_races = {'Asian', 'Native American', 'Hispanic', 'Caucasian', 'African-American', 'Other'}
+        if observation['race'] not in valid_races:
+            errors.append("race must be valid")
+
+    return errors
 
 def preprocess_data(df):
     
@@ -196,7 +233,7 @@ def will_recidivate():
             'id': _id,
             'outcome': existing_prediction.predicted_outcome
         }
-        return jsonify(response)
+        return jsonify(response), 409
 
     obs = preprocess_data(observation)
     obs = obs[columns]
@@ -218,8 +255,9 @@ def will_recidivate():
         error_msg = f'Observation ID: "{_id}" already exists'
         response['error'] = error_msg
         logger.warning(error_msg)
+        return jsonify(response), 409
         
-    return jsonify(response)
+    return jsonify(response), 201
 
 @app.route('/recidivism_result/', methods=['POST'])
 def recidivism_result():
@@ -243,12 +281,12 @@ def recidivism_result():
         }
         
         logger.info(f"Recidivism result for ID {_id}: {response}")
-        return jsonify(response)
+        return jsonify(response), 200
     
     except Prediction.DoesNotExist:
         error_msg = f'Observation ID: "{_id}" does not exist'
         logger.warning(error_msg)
-        return jsonify({'error': error_msg})
+        return jsonify({'error': error_msg}), 404
 
 @app.route('/list-db-contents')
 def list_db_contents():
