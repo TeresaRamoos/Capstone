@@ -221,6 +221,12 @@ def will_recidivate():
         response = {'error': error}
         logger.warning(f"Invalid columns in observation: {error}")
         return jsonify(response)
+    
+    validation_errors = validate_observation(observation)
+    if validation_errors:
+        response = {'error': validation_errors}
+        logger.warning(f"Validation errors in observation: {validation_errors}")
+        return jsonify(response), 422
 
     _id = observation['id']
 
