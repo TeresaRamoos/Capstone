@@ -160,16 +160,20 @@ def preprocess_data(df):
     # Frequency encoding for 'c_charge_desc'
     df = frequency_encoding(df, 'c_charge_desc')
 
-    # Create age bins
+    # Handling age_group None values
+    df['age_jail'] = df['age_jail'].fillna(-1)
     age_bins = [16, 25, 35, 45, 96]
     age_labels = ['16-24', '25-34', '35-44', '45+']
     df['age_group'] = pd.cut(df['age_jail'], bins=age_bins, labels=age_labels, right=False)
-
-    # Create bins for priors_count
+    df['age_jail'] = df['age_jail'].replace(-1, None)
+    
+    # Handling priors_count None values
+    df['priors_count'] = df['priors_count'].fillna(-1)  # Fill None values with -1 before binning
     priors_bins = [0, 1, 2, 3, 5, float('inf')]
     priors_labels = ['0', '1', '2', '3-4', '5+']
     df['priors_count_bin'] = pd.cut(df['priors_count'], bins=priors_bins, labels=priors_labels, right=False)
-
+    df['priors_count'] = df['priors_count'].replace(-1, None)  # Restore None values
+    
     # Extract more granular date features
     df['offense_month'] = df['c_offense_date'].dt.month
     df['offense_day_of_week'] = df['c_offense_date'].dt.dayofweek
