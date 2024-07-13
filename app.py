@@ -96,10 +96,17 @@ def check_valid_column(observation):
 
     return True, ""
 
+# Define the frequency encoding function
+def frequency_encoding(df, column):
+    freq_encoding = df[column].value_counts(normalize=True)
+    df[f'{column}_freq'] = df[column].map(freq_encoding)
+    return df
+
 def preprocess_data(df):
+    
     df = pd.DataFrame([df])
 
-    # Convert to correct types and handle null values
+    
     df['dob'] = pd.to_datetime(df['dob'], errors='coerce')
     df['c_offense_date'] = pd.to_datetime(df['c_offense_date'], errors='coerce')
     df['c_arrest_date'] = pd.to_datetime(df['c_arrest_date'], errors='coerce')
@@ -107,27 +114,42 @@ def preprocess_data(df):
 
     df['unified_date'] = df['c_arrest_date'].combine_first(df['c_offense_date'])
 
-    df['age_at_unified_date'] = (df['c_jail_in'] - df['dob']).dt.days // 365
-    df['age_at_unified_date'] = df['age_at_unified_date'].fillna(df['age_at_unified_date'].mean())
-    
-    avg_time_offense_arrest = (df['c_arrest_date'] - df['c_offense_date']).dt.days.mean()
-    avg_time_since_jail_in = (pd.to_datetime('today') - df['c_jail_in']).dt.days.mean()
-    avg_time_to_jail = (df['c_jail_in'] - df['unified_date']).dt.days.mean()
+    # Feature engineering
+    df['age_jail'] = (df['c_jail_in'] - df['dob']).dt.days // 365
+    df['age_arrest'] = (df['unified_date'] - df['dob']).dt.days // 365
+    df['total_juv_crimes'] = df['juv_fel_count'] + df['juv_misd_count'] + df['juv_other_count']
+    df['total_adult_crimes'] = df['priors_count'] - df['total_juv_crimes']
 
-    df['time_offense_arrest'] = (df['c_arrest_date'] - df['c_offense_date']).dt.days.fillna(avg_time_offense_arrest)
-    df['time_since_jail_in'] = (pd.to_datetime('today') - df['c_jail_in']).dt.days.fillna(avg_time_since_jail_in)
-    df['time_to_jail'] = (df['c_jail_in'] - df['unified_date']).dt.days.fillna(avg_time_to_jail)
-    
-    df['total_juv_crimes'] = df['juv_fel_count'].fillna(0) + df['juv_misd_count'].fillna(0) + df['juv_other_count'].fillna(0)
-    df['total_adult_crimes'] = df['priors_count'].fillna(0) - df['total_juv_crimes']
+    # Frequency encoding for 'c_charge_desc'
+    df = frequency_encoding(df, 'c_charge_desc')
 
-    freq_encoding = df['c_charge_desc'].value_counts(normalize=True)
-    df['c_charge_desc_freq'] = df['c_charge_desc'].map(freq_encoding).fillna(0)
+    # Create age bins
+    age_bins = [16, 25, 35, 45, 96]
+    age_labels = ['16-24', '25-34', '35-44', '45+']
+    df['age_group'] = pd.cut(df['age_jail'], bins=age_bins, labels=age_labels, right=False)
 
-    df['offense_month'] = df['c_offense_date'].dt.month.fillna(df['c_offense_date'].dt.month.mean())
-    df['offense_day_of_week'] = df['c_offense_date'].dt.dayofweek.fillna(df['c_offense_date'].dt.dayofweek.mean())
-    df['arrest_month'] = df['c_arrest_date'].dt.month.fillna(df['c_arrest_date'].dt.month.mean())
-    df['arrest_day_of_week'] = df['c_arrest_date'].dt.dayofweek.fillna(df['c_arrest_date'].dt.dayofweek.mean())
+    # Create bins for priors_count
+    priors_bins = [0, 1, 2, 3, 5, float('inf')]
+    priors_labels = ['0', '1', '2', '3-4', '5+']
+    df['priors_count_bin'] = pd.cut(df['priors_count'], bins=priors_bins, labels=priors_labels, right=False)
+
+    # Extract more granular date features
+    df['offense_month'] = df['c_offense_date'].dt.month
+    df['offense_day_of_week'] = df['c_offense_date'].dt.dayofweek
+    df['arrest_month'] = df['c_arrest_date'].dt.month
+    df['arrest_day_of_week'] = df['c_arrest_date'].dt.dayofweek
+
+    df['time_to_jail'] = (df['c_jail_in'] - df['c_offense_date']).dt.days
+    df['race_priors_interaction'] = df['race'].astype(str) + '_' + df['priors_count_bin'].astype(str)
+    df['jail_month'] = df['c_jail_in'].dt.month
+    df['jail_year'] = df['c_jail_in'].dt.year
+
+    # Replace specific races with 'Other'
+    df['race'] = df['race'].replace({
+        'Asian': 'Other',
+        'Native American': 'Other',
+        'Hispanic': 'Other'
+    })
 
     return df
 
