@@ -5,4 +5,5 @@ Flask==3.0.2
 peewee==3.17.1
 psycopg2-binary==2.9.9
 gunicorn==21.2.0
+fairlearn==0.11.0.dev0
 
